@@ -23,6 +23,7 @@
    },
    "homepage": "https://github.com/bugan/API-Voll.Med#readme",
    "dependencies": {
+      "@anthropic-ai/sdk": "^0.133.0",
       "cep-promise": "^4.4.0",
       "cors": "^2.8.5",
       "cpf-cnpj-validator": "^1.0.3",

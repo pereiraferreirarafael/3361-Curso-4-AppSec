@@ -13,6 +13,7 @@ import errorMiddleware from './error/errorMiddleware.js'
 import rotaEspecialista from './especialistas/especialistaRoutes.js'
 import rotaPaciente from './pacientes/pacienteRoutes.js'
 import rotaPlanoDeSaude from './planosDeSaude/planosDeSaudeRoutes.js'
+import rotaInsights from './insights/insightsRoutes.js'
 import faltamVariaveisDeAmbiente from './utils/serverUtils.js'
 import { resolve, dirname } from 'path'
 
@@ -60,6 +61,7 @@ rotaAvaliacoes(app)
 rotaClinica(app)
 rotaConsulta(app)
 rotaPlanoDeSaude(app)
+rotaInsights(app)
 app.use(errorMiddleware)
 
 // eslint-disable-next-line @typescript-eslint/restrict-template-expressions

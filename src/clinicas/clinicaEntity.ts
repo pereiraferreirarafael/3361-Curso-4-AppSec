@@ -17,12 +17,14 @@ export class Clinica implements IAutenticavel {
   @PrimaryGeneratedColumn('uuid')
     id: string
 
-  @OneToOne(() => Endereco, {
-    cascade: ['update']
-  })
   @Column('varchar', { length: 100 })
     nome: string
 
+  // Os decorators estavam trocados (@OneToOne em cima de `nome`): o endereço nunca era
+  // persistido e `relations: ['endereco']` lançava erro.
+  @OneToOne(() => Endereco, {
+    cascade: ['update'], nullable: true
+  })
   @JoinColumn({ referencedColumnName: 'id' })
     endereco: Relation<Endereco>
 

@@ -23,9 +23,10 @@ const remove = jest.fn(async () => ({}))
 const findOne = jest.fn(async (_entidade: unknown, opcoes: any) => bancoDeDados.get(opcoes?.where?.id) ?? null)
 const find = jest.fn(async (..._args: any[]): Promise<any[]> => [])
 
+const manager = { save, findOne, find, delete: remove, transaction: async (fn: any) => await fn({ save, find }) }
 jest.unstable_mockModule('../../data-source.js', () => ({
   AppDataSource: {
-    manager: { save, findOne, find, delete: remove },
+    manager,
     getRepository: () => ({ findOne, find })
   }
 }))
@@ -184,12 +185,13 @@ describe('BOLA - /paciente/:id exige autenticação e ser o dono', () => {
     }
   })
 
-  it('o dono consegue apagar o próprio cadastro, e só o dele', async () => {
+  it('o dono desativa o próprio cadastro (não apaga), e só o dele', async () => {
     const res = await enviar('delete', `/paciente/${ID_ANA}`, tokenAna)
 
     expect(res.status).toBe(200)
-    expect(remove).toHaveBeenCalledTimes(1)
-    expect(remove).toHaveBeenCalledWith(expect.anything(), { id: ID_ANA })
+    expect(remove).not.toHaveBeenCalled()
+    expect(bancoDeDados.get(ID_ANA).estaAtivo).toBe(false)
+    expect(bancoDeDados.get(ID_BRUNO).estaAtivo).toBe(true)
   })
 
   it('GET /:id/consultas não lista consultas canceladas (cancelamento lógico)', async () => {

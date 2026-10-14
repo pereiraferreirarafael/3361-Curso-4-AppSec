@@ -26,7 +26,15 @@ jest.unstable_mockModule('../../data-source.js', () => ({
     getRepository: () => ({ findOne })
   }
 }))
-// Evita conexão real com Redis ao importar o middleware de autenticação
+// Evita conexão real com Redis ao importar os módulos de autenticação
+jest.unstable_mockModule('../../services/redis/redisClient.js', () => ({
+  default: class {
+    async contemChave (): Promise<boolean> { return false }
+    async adiciona (): Promise<void> {}
+    async buscaValor (): Promise<null> { return null }
+    async deleta (): Promise<void> {}
+  }
+}))
 jest.unstable_mockModule('../../auth/middlewares/authMiddlewares.js', () => ({
   verificaTokenJWT: () => (_req: any, _res: any, next: any) => next(),
   refreshMiddleware: async () => (_req: any, _res: any, next: any) => next()

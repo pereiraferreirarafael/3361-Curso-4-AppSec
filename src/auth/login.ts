@@ -4,6 +4,7 @@ import { access, refresh } from './tokens.js'
 
 import { AppDataSource } from '../data-source.js'
 import { AppError } from '../error/ErrorHandler.js'
+import { contaEstaAtiva } from './contaUtils.js'
 import { decryptPassword } from '../utils/senhaUtils.js'
 
 export const login = async (req: Request, res: Response): Promise<Response> => {
@@ -17,6 +18,10 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 
     if (autenticavel == null) {
       throw new AppError('Não encontrado!', 404)
+    }
+
+    if (!(await contaEstaAtiva(req.userId, autenticavel.role))) {
+      throw new AppError('Conta desativada!', 403)
     }
 
     const newAccessToken = access.cria(req.userId, autenticavel.role)
@@ -42,6 +47,11 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 
     if (senha !== senhaCorrespondente) {
       throw new AppError('Senha incorreta!', 401)
+    }
+
+    // só depois de provar a senha: conta desativada não ganha token
+    if (!(await contaEstaAtiva(id, role))) {
+      throw new AppError('Conta desativada!', 403)
     }
 
     // aqui passo o role pq vai pro payload

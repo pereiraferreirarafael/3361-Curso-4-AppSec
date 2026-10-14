@@ -154,7 +154,7 @@ export interface PacienteRespostaDTO extends PacienteResumoDTO {
   endereco?: EnderecoRespostaDTO
 }
 
-const paraEnderecoResposta = (endereco: Endereco): EnderecoRespostaDTO => ({
+export const paraEnderecoResposta = (endereco: Endereco): EnderecoRespostaDTO => ({
   cep: endereco.cep,
   rua: endereco.rua,
   numero: endereco.numero,

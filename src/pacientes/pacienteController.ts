@@ -1,6 +1,9 @@
 // import { type Request, type Response } from 'express'
 import { Request, Response } from 'express';
 import { IsNull } from 'typeorm'
+import { emailEmUso, invalidaTokenDaRequisicao } from '../auth/contaUtils.js'
+import { cancelarConsultasFuturas } from '../consultas/consultaCancelamento.js'
+import { paraEspecialistaPublico } from '../especialistas/especialistaDto.js'
 import { Paciente } from './pacienteEntity.js'
 import { AppDataSource } from '../data-source.js'
 import { Endereco } from '../enderecos/enderecoEntity.js'
@@ -22,7 +25,7 @@ export const consultaPorPaciente = async (
   res: Response
 ): Promise<void> => {
   const { userInput } = req.query;
-  const query = `SELECT id, nome FROM paciente WHERE nome = ?`;
+  const query = `SELECT id, nome FROM paciente WHERE nome = ? AND estaAtivo = 1`;
   try {
     const listaPacientes = await AppDataSource.manager.query(query, [userInput]);
     if (listaPacientes.length === 0) {
@@ -70,6 +73,12 @@ export const criarPaciente = async (
     })
     if (existePacienteComCPF != null) {
       res.status(409).json({ message: 'Já existe um paciente com esse CPF!' })
+      return
+    }
+
+    if (await emailEmUso(email)) {
+      res.status(409).json({ message: 'E-mail já cadastrado!' })
+      return
     }
 
     let nomesPlanosSaude: string[] | undefined
@@ -125,7 +134,7 @@ export const exibeTodosPacientes = async (
   res: Response
 ): Promise<void> => {
   const tabelaPaciente = AppDataSource.getRepository(Paciente)
-  const allPacientes = await tabelaPaciente.find({ select: { id: true, nome: true } })
+  const allPacientes = await tabelaPaciente.find({ select: { id: true, nome: true }, where: { estaAtivo: true } })
   res.status(200).json(allPacientes.map(paraPacienteResumo))
 }
 
@@ -170,7 +179,7 @@ export const listaConsultasPaciente = async (
       data: consulta.data,
       desejaLembrete: consulta.desejaLembrete,
       lembretes: consulta.lembretes,
-      especialista: consulta.especialista
+      especialista: consulta.especialista != null ? paraEspecialistaPublico(consulta.especialista) : null
     }
   })
 
@@ -269,7 +278,17 @@ export const atualizarEnderecoPaciente = async (
   }
 }
 
-// Não deleta o paciente, fica inativo
+/**
+ * Desativa o paciente (estaAtivo = false); NÃO apaga o cadastro. O histórico de consultas
+ * e avaliações fica preservado (prontuário tem prazo legal de guarda), e apagar o paciente
+ * chocaria com as consultas que apontam para ele.
+ *
+ * Ao desativar:
+ *  - as consultas futuras dele são canceladas (libera a agenda dos médicos);
+ *  - o login e a renovação de token passam a ser negados (ver auth/login.ts);
+ *  - o access token usado nesta requisição é invalidado na hora.
+ * Idempotente: desativar de novo responde 200 sem refazer nada.
+ */
 export const desativaPaciente = async (
   req: Request,
   res: Response
@@ -281,14 +300,19 @@ export const desativaPaciente = async (
 
   if (paciente === null) {
     res.status(404).json('Paciente não encontrado!')
-  } else {
-    paciente.estaAtivo = false
-    // await AppDataSource.manager.save(Paciente, paciente)
+    return
+  }
 
-    //! Caso deseje deletar o paciente, basta descomentar a linha abaixo
-    await AppDataSource.manager.delete(Paciente, { id: paciente.id })
-    res.json({
-      message: 'Paciente desativado!'
+  if (paciente.estaAtivo) {
+    await AppDataSource.manager.transaction(async (manager) => {
+      await cancelarConsultasFuturas(manager, { paciente: id }, 'paciente_desistiu')
+      paciente.estaAtivo = false
+      await manager.save(Paciente, paciente)
     })
   }
+
+  await invalidaTokenDaRequisicao(req)
+  res.json({
+    message: 'Paciente desativado!'
+  })
 }

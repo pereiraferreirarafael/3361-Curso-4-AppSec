@@ -1,6 +1,7 @@
 import { type Consulta } from './consultaEntity.js'
 import { paraPacienteResumo } from '../pacientes/pacienteDto.js'
 import { Role } from '../auth/roles.js'
+import { paraEspecialistaPublico } from '../especialistas/especialistaDto.js'
 import { MotivoCancelamento } from '../utils/consultaUtils.js'
 
 /**
@@ -8,9 +9,13 @@ import { MotivoCancelamento } from '../utils/consultaUtils.js'
  * devolveria o cadastro completo do paciente (CPF, histórico clínico, ...).
  */
 export function paraConsultaResposta (consulta: Consulta): Record<string, unknown> {
-  const { paciente, ...resto } = consulta
+  const { paciente, especialista, ...resto } = consulta
   return {
     ...resto,
+    // `especialista` é eager e traz `avaliacoes` (com o pacienteId de quem avaliou), e-mail e telefone
+    especialista: especialista !== null && typeof especialista === 'object'
+      ? paraEspecialistaPublico(especialista)
+      : especialista,
     paciente: paciente !== null && typeof paciente === 'object'
       ? paraPacienteResumo(paciente)
       : paciente

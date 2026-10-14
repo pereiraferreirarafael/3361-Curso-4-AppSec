@@ -48,6 +48,14 @@ export const pacienteSchema = Yup.object().shape({
   possuiPlanoSaude: Yup.boolean()
 	.required('Campo "possuiPlanoSaude" é obrigatório'),
 
+  planosSaude: Yup.array()
+	.of(Yup.number().integer().min(0))
+	.max(10),
+
+  imagemUrl: Yup.string()
+	.max(500)
+	.matches(/^https?:\/\/[^\s,<>"']+$/i, 'imagemUrl deve ser uma URL http(s) válida'),
+
   historico: Yup.array()
 	.of(
   		Yup.string()

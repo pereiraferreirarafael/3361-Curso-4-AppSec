@@ -11,6 +11,7 @@ import {
 } from './consultaValidacoes.js'
 import { mapeiaLembretes } from '../utils/consultaUtils.js'
 import { AppError, Status } from '../error/ErrorHandler.js'
+import { paraConsultaResposta } from './consultaDto.js'
 
 export const criaConsulta = async (
   req: Request,
@@ -66,7 +67,7 @@ export const listaConsultas = async (
 ): Promise<Response> => {
   const consultas = await AppDataSource.manager.find(Consulta)
 
-  return res.json(consultas)
+  return res.json(consultas.map(paraConsultaResposta))
 }
 
 //! Não devolve resposta ao cliente, caso não encontre a consulta
@@ -76,7 +77,7 @@ export const buscaConsultaPorId = async (req: Request, res: Response
   const consulta = await AppDataSource.manager.findOne(Consulta, { where: { id }, relations: ['paciente', 'especialista'] })
 
   if (consulta !== null) {
-    res.json(consulta)
+    res.json(paraConsultaResposta(consulta))
   } else {
     throw new AppError('Consulta não encontrada', Status.BAD_REQUEST)
   }

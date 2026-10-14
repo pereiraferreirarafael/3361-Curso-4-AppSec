@@ -184,3 +184,59 @@ describe('POST /paciente - Mass Assignment (injeção de campos protegidos)', ()
     expect(res.status).toBe(400)
   })
 })
+
+describe('POST /paciente - validação e sanitização de entrada/saída', () => {
+  beforeEach(() => {
+    save.mockClear()
+    findOne.mockClear()
+  })
+
+  it('responde 400 (e não 502) quando um campo de texto chega com tipo errado', async () => {
+    const res = await cadastrarComInjecao({ nome: { $ne: null } })
+
+    expect(res.status).toBe(400)
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['javascript:alert(1)'],
+    ['data:text/html,<script>alert(1)</script>'],
+    ['ftp://exemplo.com/a.png']
+  ])('rejeita imagemUrl com esquema perigoso: %s', async (imagemUrl) => {
+    const res = await cadastrarComInjecao({ imagemUrl })
+
+    expect(res.status).toBe(400)
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('aceita imagemUrl https legítima', async () => {
+    const res = await cadastrarComInjecao({ imagemUrl: 'https://img.freepik.com/foto.jpg' })
+
+    expect(res.status).toBe(202)
+  })
+
+  it('mantém planosSaude válidos (convertidos para os nomes do enum)', async () => {
+    const res = await cadastrarComInjecao({ possuiPlanoSaude: true, planosSaude: [0, 1] })
+
+    expect(res.status).toBe(202)
+    expect(pacientePersistido().planosSaude).toEqual(['Sulamerica', 'Unimed'])
+  })
+
+  it('a resposta contém só campos da allowlist de saída (sem historico, cpf, senha, role)', async () => {
+    const res = await cadastrarComInjecao({ historico: ['asma moderada'] })
+
+    expect(res.status).toBe(202)
+    for (const campo of ['senha', 'cpf', 'role', 'historico']) {
+      expect(res.body[campo]).toBeUndefined()
+    }
+  })
+
+  it('erro interno não devolve o objeto de erro ao cliente', async () => {
+    save.mockRejectedValueOnce(new Error('ER_DUP_ENTRY: SELECT secreto FROM tabela'))
+    const res = await request(app).post('/paciente').send(pacienteValido)
+
+    expect(res.status).toBe(502)
+    expect(res.body).toEqual({ message: 'Paciente não foi criado' })
+    expect(JSON.stringify(res.body)).not.toContain('SELECT')
+  })
+})

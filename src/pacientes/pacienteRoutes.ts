@@ -3,6 +3,8 @@ import { verificaTokenJWT } from '../auth/middlewares/authMiddlewares.js'
 
 import multer from 'multer'
 import { Role } from '../auth/roles.js'
+import { validaCorpo } from '../middlewares/validacaoMiddleware.js'
+import { contratoCriarPaciente } from './pacienteContratos.js'
 import multerConfig from '../config/multer.js'
 import { criaImagem, destroiImagem, listaImagemPaciente } from './PacienteImagemController.js'
 import {
@@ -22,7 +24,7 @@ export const pacienteRouter = Router()
 
 pacienteRouter.get('/', exibeTodosPacientes)
 pacienteRouter.get('/consulta-por-paciente', consultaPorPaciente)
-pacienteRouter.post('/', criarPaciente)
+pacienteRouter.post('/', validaCorpo(contratoCriarPaciente), criarPaciente)
 pacienteRouter.get('/:id', lerPaciente)
 pacienteRouter.get('/:id/consultas', listaConsultasPaciente)
 pacienteRouter.put('/:id', verificaTokenJWT(Role.paciente), atualizarPaciente)

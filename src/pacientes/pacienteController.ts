@@ -8,22 +8,20 @@ import { mapeiaPlano } from '../utils/planoSaudeUtils.js'
 import { Consulta } from '../consultas/consultaEntity.js'
 import { AppError, Status } from '../error/ErrorHandler.js'
 import { encryptPassword } from '../utils/senhaUtils.js'
-import { pacienteSchema } from './pacienteYupSchema.js';
-import { sanitizacaoPaciente } from './pacienteSanitizations.js'
-import { filtrarCamposPermitidos, type CriarPacienteDTO } from './pacienteDto.js'
+import { type CriarPacienteDTO, paraPacienteResposta, paraPacienteResumo } from './pacienteDto.js'
 
 export const consultaPorPaciente = async (
   req: Request,
   res: Response
 ): Promise<void> => {
   const { userInput } = req.query;
-  const query = `SELECT * FROM paciente WHERE nome = ?`;
+  const query = `SELECT id, nome FROM paciente WHERE nome = ?`;
   try {
     const listaPacientes = await AppDataSource.manager.query(query, [userInput]);
     if (listaPacientes.length === 0) {
       res.status(404).json('Paciente não encontrado!');
     } else {
-      res.status(200).json(listaPacientes);
+      res.status(200).json(listaPacientes.map(paraPacienteResumo));
     }
   } catch (error) {
     console.log(error)
@@ -37,12 +35,8 @@ export const criarPaciente = async (
   res: Response
 ): Promise<void> => {
   try {
-    // Allowlist: só os campos do DTO chegam adiante (bloqueia mass assignment)
-    const pacienteData = filtrarCamposPermitidos(req.body)
-
-    const pacienteSanitizado: CriarPacienteDTO = sanitizacaoPaciente(pacienteData)
-    await pacienteSchema.validate(pacienteSanitizado);
-
+    // req.body já passou por validaCorpo(contratoCriarPaciente): allowlist,
+    // sanitização e validação (ver pacienteContratos.ts)
     const {
       cpf,
       nome,
@@ -54,7 +48,7 @@ export const criarPaciente = async (
       planosSaude,
       imagemUrl,
       historico
-    } = pacienteSanitizado
+    } = req.body as CriarPacienteDTO
 
     // Definidos pelo servidor, nunca pelo cliente
     const estaAtivo = true
@@ -107,15 +101,14 @@ export const criarPaciente = async (
 
     await AppDataSource.manager.save(Paciente, paciente)
 
-    const {senha: _senha, cpf: _cpf, ...pacienteSemDadosSensiveis} = paciente
-
-    res.status(202).json(pacienteSemDadosSensiveis)
+    res.status(202).json(paraPacienteResposta(paciente))
   } catch (error) {
-    if (error.name === 'ValidationError') {
-      res.status(400).json({ message: error.message })
+    if (error instanceof AppError) {
+      res.status(error.getStatusCode()).json({ message: error.getMessage() })
     } else {
-      res.status(502).json({ 'Paciente não foi criado': error })
+      // não devolve o objeto de erro ao cliente (stack, SQL, caminhos)
       console.log(error)
+      res.status(502).json({ message: 'Paciente não foi criado' })
     }
   }
 }
@@ -125,12 +118,8 @@ export const exibeTodosPacientes = async (
   res: Response
 ): Promise<void> => {
   const tabelaPaciente = AppDataSource.getRepository(Paciente)
-  const allPacientes = await tabelaPaciente.find({ relations: ['imagem'] })
-  if (allPacientes.length === 0) {
-    res.status(200).json([])
-  } else {
-    res.status(200).json(allPacientes)
-  }
+  const allPacientes = await tabelaPaciente.find({ select: { id: true, nome: true } })
+  res.status(200).json(allPacientes.map(paraPacienteResumo))
 }
 
 export const lerPaciente = async (
@@ -149,7 +138,7 @@ export const lerPaciente = async (
   if (paciente === null) {
     res.status(404).json('Paciente não encontrado!')
   } else {
-    res.status(200).json(paciente)
+    res.status(200).json(paraPacienteResposta(paciente))
   }
 }
 
@@ -232,7 +221,7 @@ export const atualizarPaciente = async (
       paciente.historico = historico
 
       await AppDataSource.manager.save(Paciente, paciente)
-      res.status(200).json(paciente)
+      res.status(200).json(paraPacienteResposta(paciente))
     }
   } catch (error) {
     res.status(502).json('Paciente não foi atualizado!')
@@ -274,7 +263,7 @@ export const atualizarEnderecoPaciente = async (
 
     await AppDataSource.manager.save(Paciente, paciente)
 
-    res.status(200).json(paciente)
+    res.status(200).json(paraPacienteResposta(paciente))
   }
 }
 

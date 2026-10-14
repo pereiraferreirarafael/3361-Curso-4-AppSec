@@ -1,3 +1,6 @@
+import type { Paciente } from './pacienteEntity.js'
+import type { Endereco } from '../enderecos/enderecoEntity.js'
+
 export interface EnderecoDTO {
   cep: string
   rua: string
@@ -77,4 +80,68 @@ export function filtrarCamposPermitidos (corpo: unknown): Partial<CriarPacienteD
   }
 
   return dto as Partial<CriarPacienteDTO>
+}
+
+// ---------------------------------------------------------------------------
+// Saída (resposta HTTP)
+//
+// Os mapeadores montam o objeto de resposta campo a campo (deny by default):
+// uma coluna nova na entidade NÃO vaza para a API até ser listada aqui.
+// Ficam de fora: senha, cpf, role e historico (dado clínico sensível, que só
+// deve sair numa rota autenticada do próprio paciente).
+// ---------------------------------------------------------------------------
+
+export interface EnderecoRespostaDTO {
+  cep: number
+  rua: string
+  numero: number
+  estado: string
+  complemento: string
+}
+
+export interface PacienteResumoDTO {
+  id: string
+  nome: string
+}
+
+export interface PacienteRespostaDTO extends PacienteResumoDTO {
+  email: string
+  telefone: string
+  estaAtivo: boolean
+  possuiPlanoSaude: boolean
+  planosSaude?: string[]
+  imagemUrl?: string
+  imagem?: { url: string }
+  endereco?: EnderecoRespostaDTO
+}
+
+const paraEnderecoResposta = (endereco: Endereco): EnderecoRespostaDTO => ({
+  cep: endereco.cep,
+  rua: endereco.rua,
+  numero: endereco.numero,
+  estado: endereco.estado,
+  complemento: endereco.complemento
+})
+
+/** Listagens: só o necessário para identificar o paciente. */
+export function paraPacienteResumo (origem: { id: string, nome: string }): PacienteResumoDTO {
+  return { id: origem.id, nome: origem.nome }
+}
+
+/** Detalhe do paciente, sem credenciais, CPF, role ou histórico clínico. */
+export function paraPacienteResposta (paciente: Paciente): PacienteRespostaDTO {
+  const resposta: PacienteRespostaDTO = {
+    ...paraPacienteResumo(paciente),
+    email: paciente.email,
+    telefone: paciente.telefone,
+    estaAtivo: paciente.estaAtivo,
+    possuiPlanoSaude: paciente.possuiPlanoSaude,
+    planosSaude: paciente.planosSaude,
+    imagemUrl: paciente.imagemUrl
+  }
+
+  if (paciente.imagem != null) resposta.imagem = { url: paciente.imagem.url }
+  if (paciente.endereco != null) resposta.endereco = paraEnderecoResposta(paciente.endereco)
+
+  return resposta
 }

@@ -10,6 +10,7 @@ import { AppError, Status } from '../error/ErrorHandler.js'
 import { encryptPassword } from '../utils/senhaUtils.js'
 import { pacienteSchema } from './pacienteYupSchema.js';
 import { sanitizacaoPaciente } from './pacienteSanitizations.js'
+import { filtrarCamposPermitidos, type CriarPacienteDTO } from './pacienteDto.js'
 
 export const consultaPorPaciente = async (
   req: Request,
@@ -36,25 +37,28 @@ export const criarPaciente = async (
   res: Response
 ): Promise<void> => {
   try {
-    const pacienteData = req.body
+    // Allowlist: só os campos do DTO chegam adiante (bloqueia mass assignment)
+    const pacienteData = filtrarCamposPermitidos(req.body)
 
-    const pacienteSanitizado: Paciente = sanitizacaoPaciente(pacienteData)
+    const pacienteSanitizado: CriarPacienteDTO = sanitizacaoPaciente(pacienteData)
     await pacienteSchema.validate(pacienteSanitizado);
 
-    let {
+    const {
       cpf,
       nome,
       email,
       senha,
-      estaAtivo,
       possuiPlanoSaude,
       endereco,
       telefone,
       planosSaude,
       imagemUrl,
-      imagem,
       historico
     } = pacienteSanitizado
+
+    // Definidos pelo servidor, nunca pelo cliente
+    const estaAtivo = true
+    const imagem = undefined
 
     if (!CPFValido(cpf)) {
       throw new AppError('CPF Inválido!')
@@ -67,9 +71,10 @@ export const criarPaciente = async (
       res.status(409).json({ message: 'Já existe um paciente com esse CPF!' })
     }
 
+    let nomesPlanosSaude: string[] | undefined
     if (possuiPlanoSaude === true && planosSaude !== undefined) {
       // transforma array de numbers em array de strings com os nomes dos planos definidos no enum correspondente
-      planosSaude = mapeiaPlano(planosSaude)
+      nomesPlanosSaude = mapeiaPlano(planosSaude)
     }
 
     const senhaCriptografada = encryptPassword(senha)
@@ -79,7 +84,7 @@ export const criarPaciente = async (
       email,
       senhaCriptografada,
       telefone,
-      planosSaude,
+      nomesPlanosSaude,
       estaAtivo,
       imagemUrl,
       imagem,
@@ -89,7 +94,7 @@ export const criarPaciente = async (
     const enderecoPaciente = new Endereco()
 
     if (endereco !== undefined) {
-      enderecoPaciente.cep = endereco.cep
+      enderecoPaciente.cep = Number.parseInt(endereco.cep, 10)
       enderecoPaciente.rua = endereco.rua
       enderecoPaciente.estado = endereco.estado
       enderecoPaciente.numero = endereco.numero

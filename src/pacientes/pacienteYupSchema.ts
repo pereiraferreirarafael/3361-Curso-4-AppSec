@@ -48,6 +48,14 @@ export const pacienteSchema = Yup.object().shape({
   possuiPlanoSaude: Yup.boolean()
 	.required('Campo "possuiPlanoSaude" é obrigatório'),
 
+  historico: Yup.array()
+	.of(
+  		Yup.string()
+    			.max(200)
+    			.matches(/^[\p{L}\p{N}\s,.()-]+$/u, 'Histórico contém caracteres inválidos')
+	)
+	.max(50),
+
   endereco: Yup.object().shape({
 	cep: Yup.string()
   		.required()

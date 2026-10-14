@@ -5,12 +5,8 @@
  * deveria controlar (role, isAdmin, id, relações). O teste inspeciona a entidade
  * que o controller entrega ao banco (`manager.save`) e a resposta HTTP.
  *
- * Convenção:
- *  - `it(...)`         -> proteção que HOJE funciona; se falhar, houve regressão.
- *  - `it.failing(...)` -> vulnerabilidade CONFIRMADA e ainda não corrigida. O teste
- *                         descreve o comportamento seguro esperado e "passa" enquanto
- *                         a falha existir. Ao corrigir o código ele passa a falhar:
- *                         remova o `.failing` e ele vira um teste de regressão normal.
+ * Todos os testes devem passar: o controller usa uma allowlist (pacienteDto.ts) e
+ * descarta qualquer campo fora do contrato antes de validar ou persistir.
  *
  * O banco, o Redis e a consulta de CEP são mockados: o teste é hermético.
  */
@@ -160,13 +156,12 @@ describe('POST /paciente - Mass Assignment (injeção de campos protegidos)', ()
   })
 
   // ---------------------------------------------------------------------------
-  // Vulnerabilidades confirmadas (ver pacienteController.criarPaciente)
+  // Antes vulneráveis (corrigidos pela allowlist em pacienteDto.ts)
   // ---------------------------------------------------------------------------
 
-  // O controller repassa `imagem` do corpo ao construtor de Paciente e a relação
-  // tem cascade: ['update']. O cliente consegue apontar para um registro de
-  // imagem existente (de outro paciente) e alterá-lo.
-  it.failing('NÃO deve aceitar a relação "imagem" enviada pelo cliente', async () => {
+  // `imagem` tem cascade: ['update']; aceitar o objeto do cliente permitiria
+  // alterar o registro de imagem de outro paciente.
+  it('NÃO deve aceitar a relação "imagem" enviada pelo cliente', async () => {
     const imagemInjetada = { id: 1, nome: 'x', tamanho: 1, key: 'k', url: 'http://atacante.exemplo/p.png' }
     const res = await cadastrarComInjecao({ imagem: imagemInjetada })
 
@@ -174,16 +169,16 @@ describe('POST /paciente - Mass Assignment (injeção de campos protegidos)', ()
     expect(pacientePersistido().imagem).toBeUndefined()
   })
 
-  // `estaAtivo` é lido do corpo; o status do cadastro deveria ser decidido pelo servidor.
-  it.failing('NÃO deve deixar o cliente definir "estaAtivo"', async () => {
+  // O status do cadastro é decidido pelo servidor.
+  it('NÃO deixa o cliente definir "estaAtivo"', async () => {
     const res = await cadastrarComInjecao({ estaAtivo: false })
 
     expect(res.status).toBe(202)
-    expect(pacientePersistido().estaAtivo).not.toBe(false)
+    expect(pacientePersistido().estaAtivo).toBe(true)
   })
 
-  // `historico` (dado clínico) é aceito sem qualquer validação no schema yup.
-  it.failing('NÃO deve aceitar "historico" clínico sem validação no cadastro', async () => {
+  // `historico` (dado clínico) é validado no schema yup.
+  it('NÃO deve aceitar "historico" clínico sem validação no cadastro', async () => {
     const res = await cadastrarComInjecao({ historico: ['<script>alert(1)</script>'] })
 
     expect(res.status).toBe(400)

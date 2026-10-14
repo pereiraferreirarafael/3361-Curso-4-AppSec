@@ -58,7 +58,7 @@ export class Paciente implements IAutenticavel {
     planosSaude: string[]
 
   @Column({ type: 'simple-array', nullable: true })
-    historico: string
+    historico: string[]
 
   @Column('varchar', { nullable: false })
     role: Role

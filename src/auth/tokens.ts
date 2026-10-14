@@ -18,7 +18,7 @@ const blocklistAccessToken = new ClienteRedis('blocklist-access-token: ')
 
 function criaTokenJWT (id, role, [tempoQuantidade, tempoUnidade]: string[]): string {
   const payload = { id, role }
-  const token = jwt.sign(payload, process.env.SECRET_KEY, {
+  const token = jwt.sign(payload, process.env.SECRET_JWT, {
     expiresIn: tempoQuantidade + tempoUnidade
   })
   return token

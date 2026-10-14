@@ -8,7 +8,13 @@ import { mapeiaPlano } from '../utils/planoSaudeUtils.js'
 import { Consulta } from '../consultas/consultaEntity.js'
 import { AppError, Status } from '../error/ErrorHandler.js'
 import { encryptPassword } from '../utils/senhaUtils.js'
-import { type CriarPacienteDTO, paraPacienteResposta, paraPacienteResumo } from './pacienteDto.js'
+import {
+  type AtualizarPacienteDTO,
+  type CriarPacienteDTO,
+  type EnderecoDTO,
+  paraPacienteResposta,
+  paraPacienteResumo
+} from './pacienteDto.js'
 
 export const consultaPorPaciente = async (
   req: Request,
@@ -175,30 +181,24 @@ export const atualizarPaciente = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  let {
+  // req.body já passou por validaCorpo(contratoAtualizarPaciente): só campos
+  // editáveis pelo dono (sem cpf, senha, role, estaAtivo ou imagem)
+  const {
     nome,
     email,
-    senha,
-    estaAtivo,
     telefone,
     possuiPlanoSaude,
     planosSaude,
-    cpf,
     imagemUrl,
-    imagem,
     historico
-  } = req.body
+  } = req.body as AtualizarPacienteDTO
 
   const { id } = req.params
 
-  if (!CPFValido(cpf)) {
-    throw new AppError('CPF Inválido!', Status.BAD_REQUEST)
-  }
-
-  if (possuiPlanoSaude === true && planosSaude !== undefined) {
-    // transforma array de numbers em array de strings com os nomes dos planos definidos no enum correspondente
-    planosSaude = mapeiaPlano(planosSaude)
-  }
+  // transforma array de numbers em array de strings com os nomes dos planos definidos no enum correspondente
+  const nomesPlanosSaude = possuiPlanoSaude && planosSaude !== undefined
+    ? mapeiaPlano(planosSaude)
+    : undefined
 
   try {
     const paciente = await AppDataSource.manager.findOne(Paciente, {
@@ -209,21 +209,20 @@ export const atualizarPaciente = async (
     if (paciente === null) {
       res.status(404).json('Paciente não encontrado!')
     } else {
-      paciente.cpf = cpf
       paciente.nome = nome
       paciente.email = email
       paciente.possuiPlanoSaude = possuiPlanoSaude
       paciente.telefone = telefone
-      paciente.planosSaude = planosSaude
-      paciente.estaAtivo = estaAtivo
-      paciente.imagemUrl = imagemUrl
-      paciente.imagem = imagem
-      paciente.historico = historico
+      if (nomesPlanosSaude !== undefined) paciente.planosSaude = nomesPlanosSaude
+      else if (!possuiPlanoSaude) paciente.planosSaude = []
+      if (imagemUrl !== undefined) paciente.imagemUrl = imagemUrl
+      if (historico !== undefined) paciente.historico = historico
 
       await AppDataSource.manager.save(Paciente, paciente)
       res.status(200).json(paraPacienteResposta(paciente))
     }
   } catch (error) {
+    console.log(error)
     res.status(502).json('Paciente não foi atualizado!')
   }
 }
@@ -233,7 +232,9 @@ export const atualizarEnderecoPaciente = async (
   res: Response
 ): Promise<void> => {
   const { id } = req.params
-  const { cep, rua, numero, estado, complemento } = req.body
+  // req.body já passou por validaCorpo(contratoAtualizarEndereco)
+  const { cep, rua, numero, estado, complemento } = req.body as EnderecoDTO
+  const cepNumerico = Number.parseInt(cep, 10)
   const paciente = await AppDataSource.manager.findOne(Paciente, {
     where: { id },
     relations: ['endereco']
@@ -244,7 +245,7 @@ export const atualizarEnderecoPaciente = async (
   } else {
     if (paciente.endereco === null) {
       const endereco = new Endereco()
-      endereco.cep = cep
+      endereco.cep = cepNumerico
       endereco.rua = rua
       endereco.estado = estado
       endereco.numero = numero
@@ -254,7 +255,7 @@ export const atualizarEnderecoPaciente = async (
 
       await AppDataSource.manager.save(Endereco, endereco)
     } else {
-      paciente.endereco.cep = cep
+      paciente.endereco.cep = cepNumerico
       paciente.endereco.rua = rua
       paciente.endereco.estado = estado
       paciente.endereco.numero = numero

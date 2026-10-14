@@ -21,7 +21,7 @@ const bancoDeDados = new Map<string, any>()
 const save = jest.fn(async (_entidade: unknown, obj: any) => obj)
 const remove = jest.fn(async () => ({}))
 const findOne = jest.fn(async (_entidade: unknown, opcoes: any) => bancoDeDados.get(opcoes?.where?.id) ?? null)
-const find = jest.fn(async () => [])
+const find = jest.fn(async (..._args: any[]): Promise<any[]> => [])
 
 jest.unstable_mockModule('../../data-source.js', () => ({
   AppDataSource: {
@@ -190,6 +190,15 @@ describe('BOLA - /paciente/:id exige autenticação e ser o dono', () => {
     expect(res.status).toBe(200)
     expect(remove).toHaveBeenCalledTimes(1)
     expect(remove).toHaveBeenCalledWith(expect.anything(), { id: ID_ANA })
+  })
+
+  it('GET /:id/consultas não lista consultas canceladas (cancelamento lógico)', async () => {
+    const res = await enviar('get', `/paciente/${ID_ANA}/consultas`, tokenAna)
+
+    expect(res.status).toBe(200)
+    const { where } = find.mock.calls[0][1] as any
+    expect(where.canceladaEm?.type).toBe('isNull')
+    expect(where.paciente).toEqual({ id: ID_ANA })
   })
 
   it('o dono passa pela checagem nas rotas de imagem', async () => {

@@ -1,5 +1,6 @@
 // import { type Request, type Response } from 'express'
 import { Request, Response } from 'express';
+import { IsNull } from 'typeorm'
 import { Paciente } from './pacienteEntity.js'
 import { AppDataSource } from '../data-source.js'
 import { Endereco } from '../enderecos/enderecoEntity.js'
@@ -160,7 +161,7 @@ export const listaConsultasPaciente = async (
     throw new AppError('Paciente não encontrado!', Status.NOT_FOUND)
   }
   const consultas = await AppDataSource.manager.find(Consulta, {
-    where: { paciente: { id: paciente.id } }
+    where: { paciente: { id: paciente.id }, canceladaEm: IsNull() }
   })
 
   const consultadasTratadas = consultas.map((consulta) => {

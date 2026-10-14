@@ -1,5 +1,7 @@
 import { type Consulta } from './consultaEntity.js'
 import { paraPacienteResumo } from '../pacientes/pacienteDto.js'
+import { Role } from '../auth/roles.js'
+import { MotivoCancelamento } from '../utils/consultaUtils.js'
 
 /**
  * `paciente` é eager na entidade Consulta; sem este mapeador cada consulta
@@ -36,4 +38,28 @@ export function filtrarCamposConsulta (corpo: unknown): Partial<CriarConsultaDTO
     if (Object.prototype.hasOwnProperty.call(corpo, chave)) dto[chave] = (corpo as Record<string, unknown>)[chave]
   }
   return dto as Partial<CriarConsultaDTO>
+}
+
+/** Motivos aceitos no cancelamento: os nomes do enum MotivoCancelamento. */
+export const MOTIVOS_CANCELAMENTO: string[] = Object.keys(MotivoCancelamento).filter((chave) => Number.isNaN(Number(chave)))
+
+/** Único contrato aceito do cliente em DELETE /consulta/:id. O motivo é opcional. */
+export interface CancelarConsultaDTO {
+  motivoCancelamento?: string
+}
+
+export function filtrarCamposCancelamento (corpo: unknown): Partial<CancelarConsultaDTO> {
+  if (typeof corpo !== 'object' || corpo === null || Array.isArray(corpo)) return {}
+  return Object.prototype.hasOwnProperty.call(corpo, 'motivoCancelamento')
+    ? { motivoCancelamento: (corpo as Record<string, unknown>).motivoCancelamento as string }
+    : {}
+}
+
+/** Sem motivo informado, assume o mais provável para quem está cancelando. */
+export function motivoPadraoDoPerfil (role?: string): string {
+  switch (role) {
+    case Role.paciente: return 'paciente_desistiu'
+    case Role.especialista: return 'médico_cancelou'
+    default: return 'outros'
+  }
 }

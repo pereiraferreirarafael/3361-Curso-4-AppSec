@@ -1,4 +1,4 @@
-import { Between } from 'typeorm'
+import { Between, IsNull } from 'typeorm'
 import { AppDataSource } from '../data-source.js'
 import { Especialista } from '../especialistas/EspecialistaEntity.js'
 import { Paciente } from '../pacientes/pacienteEntity.js'
@@ -45,6 +45,7 @@ const pacienteEstaDisponivel = async (pacienteId: string, tempoDaData: Date): Pr
   const consultations = await AppDataSource.manager.find(Consulta, {
     where: {
       paciente: { id: pacienteId },
+      canceladaEm: IsNull(), // consulta cancelada libera o horário
       data: Between(
         new Date(dataObj.getFullYear(), dataObj.getMonth(), dataObj.getDate(), 0, 0, 0),
         new Date(dataObj.getFullYear(), dataObj.getMonth(), dataObj.getDate(), 23, 59, 59)
@@ -59,6 +60,7 @@ const especialistaEstaDisponivel = async (especialistaId: string, tempoDaData: D
   const consultations = await AppDataSource.manager.find(Consulta, {
     where: {
       especialista: { id: especialistaId },
+      canceladaEm: IsNull(), // consulta cancelada libera o horário
       data: Between(
         new Date(dataObj.getFullYear(), dataObj.getMonth(), dataObj.getDate(), 0, 0, 0),
         new Date(dataObj.getFullYear(), dataObj.getMonth(), dataObj.getDate(), 23, 59, 59)

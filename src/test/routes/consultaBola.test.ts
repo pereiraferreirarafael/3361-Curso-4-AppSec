@@ -21,14 +21,17 @@ const CONSULTA_BRUNO = 'c0000000-0000-0000-0000-00000000000b'
 let consultas: any[] = []
 const save = jest.fn(async (_entidade: unknown, obj: any) => obj)
 const remove = jest.fn(async () => ({}))
+// `where.canceladaEm` só filtra se o código passar IsNull(): sem isso, consulta cancelada vazaria
+const soAtivas = (where: any): boolean => where?.canceladaEm?.type === 'isNull'
 const find = jest.fn(async (_entidade: unknown, opcoes: any = {}) => {
   const { paciente, especialista } = opcoes.where ?? {}
   return consultas.filter((c) =>
     (paciente === undefined || c.paciente.id === paciente.id) &&
-    (especialista === undefined || c.especialista.id === especialista.id))
+    (especialista === undefined || c.especialista.id === especialista.id) &&
+    (!soAtivas(opcoes.where) || c.canceladaEm == null))
 })
 const findOne = jest.fn(async (_entidade: unknown, opcoes: any) =>
-  consultas.find((c) => c.id === opcoes?.where?.id) ?? null)
+  consultas.find((c) => c.id === opcoes?.where?.id && (!soAtivas(opcoes.where) || c.canceladaEm == null)) ?? null)
 
 jest.unstable_mockModule('../../data-source.js', () => ({
   AppDataSource: { manager: { save, find, findOne, delete: remove } }
@@ -41,10 +44,11 @@ jest.unstable_mockModule('../../services/redis/redisClient.js', () => ({
     async deleta (): Promise<void> {}
   }
 }))
+const antecedenciaOk = jest.fn((..._args: any[]) => true)
 // Regras de agenda (horário, disponibilidade) não são o alvo deste teste
 jest.unstable_mockModule('../../consultas/consultaValidacoes.js', () => ({
   validaClinicaEstaAberta: () => true,
-  validaAntecedenciaMinima: () => true,
+  validaAntecedenciaMinima: (...args: any[]) => antecedenciaOk(...args),
   estaAtivoPaciente: async () => true,
   estaAtivoEspecialista: async () => true,
   pacienteEstaDisponivel: async () => true,
@@ -53,6 +57,7 @@ jest.unstable_mockModule('../../consultas/consultaValidacoes.js', () => ({
 
 const { consultaRouter } = await import('../../consultas/consultaRoutes.js')
 const { access } = await import('../../auth/tokens.js')
+const { Consulta } = await import('../../consultas/consultaEntity.js')
 const { default: errorMiddleware } = await import('../../error/errorMiddleware.js')
 
 const app = express()
@@ -72,9 +77,12 @@ const pacienteCompleto = (id: string, nome: string): any => ({
 })
 const especialistaDe = (id: string): any => ({ id, nome: 'Dr', crm: '123' })
 
-const novaConsulta = (id: string, paciente: any, especialista: any): any => ({
-  id, paciente, especialista, data: new Date('2030-01-07T10:00:00Z'), desejaLembrete: false, lembretes: []
-})
+// Instância real da entidade: o controller usa consulta.cancelar(...)
+const novaConsulta = (id: string, paciente: any, especialista: any): any =>
+  Object.assign(new Consulta(), {
+    id, paciente, especialista, data: new Date('2030-01-07T10:00:00Z'),
+    desejaLembrete: false, lembretes: [], motivoCancelamento: null, canceladaEm: null
+  })
 
 const corpoValido = { especialista: ID_DRA_LIA, data: '2030-01-07T10:00:00.000Z', desejaLembrete: false }
 
@@ -83,7 +91,8 @@ beforeEach(() => {
     novaConsulta(CONSULTA_ANA, pacienteCompleto(ID_ANA, 'Ana'), especialistaDe(ID_DRA_LIA)),
     novaConsulta(CONSULTA_BRUNO, pacienteCompleto(ID_BRUNO, 'Bruno'), especialistaDe(ID_DR_MAX))
   ]
-  for (const mock of [save, remove, find, findOne]) mock.mockClear()
+  for (const mock of [save, remove, find, findOne, antecedenciaOk]) mock.mockClear()
+  antecedenciaOk.mockReturnValue(true)
 })
 
 describe('/consulta - toda rota exige autenticação', () => {
@@ -223,14 +232,15 @@ describe('DELETE /consulta/:id - BOLA', () => {
     const res = await request(app).delete(`/consulta/${CONSULTA_ANA}`).set(bruno)
 
     expect(res.status).toBe(400)
-    expect(remove).not.toHaveBeenCalled()
+    expect(save).not.toHaveBeenCalled()
+    expect(consultas.find((c) => c.id === CONSULTA_ANA).canceladaEm).toBeNull()
   })
 
   it('especialista de outra consulta NÃO cancela', async () => {
     const res = await request(app).delete(`/consulta/${CONSULTA_ANA}`).set(drMax)
 
     expect(res.status).toBe(400)
-    expect(remove).not.toHaveBeenCalled()
+    expect(save).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -241,6 +251,108 @@ describe('DELETE /consulta/:id - BOLA', () => {
     const res = await request(app).delete(`/consulta/${CONSULTA_ANA}`).set(cabecalho)
 
     expect(res.status).toBe(200)
-    expect(remove).toHaveBeenCalledWith(expect.anything(), { id: CONSULTA_ANA })
+    expect(save).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('DELETE /consulta/:id - cancelamento lógico', () => {
+  const cancelar = async (cabecalho = ana, corpo?: object) => {
+    const req = request(app).delete(`/consulta/${CONSULTA_ANA}`).set(cabecalho)
+    return await (corpo !== undefined ? req.send(corpo) : req)
+  }
+  const daAna = (): any => consultas.find((c) => c.id === CONSULTA_ANA)
+
+  it('PRESERVA a linha: marca canceladaEm e motivo, e não apaga nada', async () => {
+    const res = await cancelar()
+
+    expect(res.status).toBe(200)
+    expect(remove).not.toHaveBeenCalled()
+    expect(consultas).toHaveLength(2) // a consulta continua no "banco"
+    expect(daAna().canceladaEm).toBeInstanceOf(Date)
+    expect(save).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: CONSULTA_ANA }))
+  })
+
+  it.each([
+    ['PACIENTE', ana, 'paciente_desistiu'],
+    ['ESPECIALISTA', draLia, 'médico_cancelou'],
+    ['CLINICA', clinica, 'outros']
+  ])('sem motivo informado, o padrão do perfil %s é "%s"', async (_perfil, cabecalho, esperado) => {
+    await cancelar(cabecalho)
+
+    expect(daAna().motivoCancelamento).toBe(esperado)
+  })
+
+  it.each([['paciente_desistiu'], ['médico_cancelou'], ['outros']])('grava o motivo informado: %s', async (motivo) => {
+    const res = await cancelar(ana, { motivoCancelamento: motivo })
+
+    expect(res.status).toBe(200)
+    expect(daAna().motivoCancelamento).toBe(motivo)
+  })
+
+  it.each([
+    ['texto fora do enum', { motivoCancelamento: 'porque sim' }],
+    ['índice numérico', { motivoCancelamento: 1 }],
+    ['objeto', { motivoCancelamento: { $ne: null } }],
+    ['injeção SQL', { motivoCancelamento: "x'; DROP TABLE consulta; --" }]
+  ])('motivo inválido -> 400 e nada é gravado: %s', async (_caso, corpo) => {
+    const res = await cancelar(ana, corpo)
+
+    expect(res.status).toBe(400)
+    expect(save).not.toHaveBeenCalled()
+    expect(daAna().canceladaEm).toBeNull()
+  })
+
+  it('ignora campos fora do contrato (data, id, canceladaEm)', async () => {
+    await cancelar(ana, { data: '2099-01-01', id: 'x', canceladaEm: null, paciente: ID_BRUNO })
+
+    expect(daAna().id).toBe(CONSULTA_ANA)
+    expect(daAna().data.toISOString()).toBe('2030-01-07T10:00:00.000Z')
+    expect(daAna().paciente.id).toBe(ID_ANA)
+    expect(daAna().canceladaEm).toBeInstanceOf(Date)
+  })
+
+  it('respeita a antecedência mínima: fora do prazo -> 400 e a consulta segue ativa', async () => {
+    antecedenciaOk.mockReturnValue(false)
+
+    const res = await cancelar()
+
+    expect(res.status).toBe(400)
+    expect(save).not.toHaveBeenCalled()
+    expect(daAna().canceladaEm).toBeNull()
+  })
+
+  it('cancelar de novo -> "não encontrada", sem regravar nem sobrescrever o motivo original', async () => {
+    await cancelar(ana, { motivoCancelamento: 'outros' })
+    save.mockClear()
+
+    const segunda = await cancelar(ana, { motivoCancelamento: 'paciente_desistiu' })
+
+    expect(segunda.status).toBe(400)
+    expect(save).not.toHaveBeenCalled()
+    expect(daAna().motivoCancelamento).toBe('outros')
+  })
+
+  describe('depois de cancelada, a consulta some do que o usuário enxerga', () => {
+    beforeEach(async () => { await cancelar() })
+
+    it('GET /consulta não lista', async () => {
+      const res = await request(app).get('/consulta').set(ana)
+
+      expect(res.body).toEqual([])
+    })
+
+    it('a clínica também não vê na listagem', async () => {
+      const res = await request(app).get('/consulta').set(clinica)
+
+      expect(res.body.map((c: any) => c.id)).toEqual([CONSULTA_BRUNO])
+    })
+
+    it('GET /consulta/:id responde como "não existe"', async () => {
+      const cancelada = await request(app).get(`/consulta/${CONSULTA_ANA}`).set(ana)
+      const inexistente = await request(app).get('/consulta/nao-existe').set(ana)
+
+      expect(cancelada.status).toBe(inexistente.status)
+      expect(cancelada.body).toEqual(inexistente.body)
+    })
   })
 })

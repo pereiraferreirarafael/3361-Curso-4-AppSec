@@ -46,8 +46,20 @@ resumo de **até 3 linhas** comparando agendamentos e cancelamentos do mês com 
   timeout de 15 s e 1 retry. Qualquer falha (erro, recusa, timeout, texto inválido) devolve o
   resumo por regras, nunca um 500.
 
-## Limitação conhecida
+## Cancelamento lógico
 
-"Cancelada" = consulta com `motivoCancelamento` preenchido. Hoje `DELETE /consulta/:id` **apaga**
-a consulta, então cancelamentos não ficam registrados e o relatório só enxergará cancelamentos
-quando o cancelamento passar a preservar a linha (cancelamento lógico).
+`DELETE /consulta/:id` **não apaga mais** a consulta: preenche `canceladaEm` (data/hora) e
+`motivoCancelamento` (`paciente_desistiu`, `médico_cancelou` ou `outros`; se o corpo não trouxer
+motivo, assume o padrão do perfil que cancelou). Uma consulta está cancelada quando `canceladaEm`
+está preenchido, e é isso que o relatório conta.
+
+Para o usuário nada muda: a consulta cancelada some de `GET /consulta`, `GET /consulta/:id` e
+`GET /paciente/:id/consultas`, e o horário volta a ficar livre para novos agendamentos.
+
+## Limitações
+
+- A análise usa a **data da consulta**, não a data em que foi marcada ou cancelada. A data do
+  cancelamento (`canceladaEm`) já é gravada e pode alimentar uma análise futura de antecedência.
+- Cancelamentos feitos **antes** desta mudança foram apagados e não aparecem no histórico.
+- A coluna nova `cancelada_em` é criada automaticamente porque o projeto usa `synchronize: true`.
+  Em ambiente com `synchronize` desligado, é preciso uma migration.

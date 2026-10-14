@@ -3,7 +3,7 @@ import { verificaTokenJWT } from '../auth/middlewares/authMiddlewares.js'
 import { Role } from '../auth/roles.js'
 import { validaCorpo } from '../middlewares/validacaoMiddleware.js'
 import { buscaConsultaPorId, criaConsulta, deletaConsulta, listaConsultas } from './consultaController.js'
-import { contratoCriarConsulta } from './consultaContratos.js'
+import { contratoCancelarConsulta, contratoCriarConsulta } from './consultaContratos.js'
 
 export const consultaRouter = Router()
 
@@ -14,7 +14,8 @@ const autenticado = verificaTokenJWT(Role.paciente, Role.especialista, Role.clin
 consultaRouter.post('/', verificaTokenJWT(Role.paciente), validaCorpo(contratoCriarConsulta), criaConsulta)
 consultaRouter.get('/', autenticado, listaConsultas)
 consultaRouter.get('/:id', autenticado, buscaConsultaPorId)
-consultaRouter.delete('/:id', autenticado, deletaConsulta)
+// cancelamento lógico: a consulta é mantida, marcada como cancelada
+consultaRouter.delete('/:id', autenticado, validaCorpo(contratoCancelarConsulta), deletaConsulta)
 
 export default (app) => {
   app.use('/consulta', consultaRouter)

@@ -1,5 +1,6 @@
 import { type Request, type Response } from 'express'
 import { AppDataSource } from '../data-source.js'
+import { IsNull } from 'typeorm'
 import { Consulta } from './consultaEntity.js'
 import { type Especialista } from '../especialistas/EspecialistaEntity.js'
 import { type Paciente } from '../pacientes/pacienteEntity.js'
@@ -13,7 +14,7 @@ import {
 } from './consultaValidacoes.js'
 import { mapeiaLembretes } from '../utils/consultaUtils.js'
 import { AppError, Status } from '../error/ErrorHandler.js'
-import { type CriarConsultaDTO, paraConsultaResposta } from './consultaDto.js'
+import { type CancelarConsultaDTO, type CriarConsultaDTO, motivoPadraoDoPerfil, paraConsultaResposta } from './consultaDto.js'
 import { filtroDeListagem, podeAcessarConsulta } from './consultaAcesso.js'
 
 export const criaConsulta = async (
@@ -75,7 +76,8 @@ export const listaConsultas = async (
   if (where === null) {
     throw new AppError('Não autorizado', Status.FORBIDDEN)
   }
-  const consultas = await AppDataSource.manager.find(Consulta, { where })
+  // consultas canceladas (lógicas) não aparecem mais nas listagens
+  const consultas = await AppDataSource.manager.find(Consulta, { where: { ...where, canceladaEm: IsNull() } })
 
   return res.json(consultas.map(paraConsultaResposta))
 }
@@ -84,7 +86,7 @@ export const listaConsultas = async (
 export const buscaConsultaPorId = async (req: Request, res: Response
 ): Promise<void> => {
   const { id } = req.params
-  const consulta = await AppDataSource.manager.findOne(Consulta, { where: { id }, relations: ['paciente', 'especialista'] })
+  const consulta = await AppDataSource.manager.findOne(Consulta, { where: { id, canceladaEm: IsNull() }, relations: ['paciente', 'especialista'] })
 
   // Quem não participa da consulta recebe a mesma resposta de "não existe"
   if (consulta !== null && podeAcessarConsulta(consulta, req.userId, req.userRole)) {
@@ -99,9 +101,11 @@ export const deletaConsulta = async (
   res: Response
 ): Promise<void> => {
   const { id } = req.params
-  const { motivoCancelamento } = req.body
+  // req.body já passou por validaCorpo(contratoCancelarConsulta)
+  const { motivoCancelamento } = req.body as CancelarConsultaDTO
+  // já cancelada = para o cliente é como se não existisse (mesma resposta de antes, quando a linha era apagada)
   const consulta = await AppDataSource.manager.findOne(Consulta, {
-    where: { id }
+    where: { id, canceladaEm: IsNull() }
   })
 
   if (consulta == null || !podeAcessarConsulta(consulta, req.userId, req.userRole)) {
@@ -115,8 +119,8 @@ export const deletaConsulta = async (
     )
   }
 
-  consulta.cancelar = motivoCancelamento
-
-  await AppDataSource.manager.delete(Consulta, { id })
+  // Cancelamento lógico: preserva a linha (histórico e relatórios de gestão)
+  consulta.cancelar(motivoCancelamento ?? motivoPadraoDoPerfil(req.userRole))
+  await AppDataSource.manager.save(Consulta, consulta)
   res.json('Consulta cancelada com sucesso')
 }

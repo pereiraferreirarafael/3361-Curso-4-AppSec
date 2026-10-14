@@ -37,7 +37,15 @@ export class Consulta {
   @Column({ name: 'motivo_cancelamento', nullable: true })
     motivoCancelamento: string
 
+  /**
+   * Cancelamento lógico: a linha é mantida. Uma consulta está cancelada quando
+   * `canceladaEm` está preenchido; o motivo é informativo.
+   */
+  @Column({ name: 'cancelada_em', type: 'datetime', nullable: true })
+    canceladaEm: Date | null
+
   cancelar (motivo: string): void {
     this.motivoCancelamento = motivo
+    this.canceladaEm = new Date()
   }
 }

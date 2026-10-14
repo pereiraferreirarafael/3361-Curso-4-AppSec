@@ -10,6 +10,9 @@ import {
 } from './especialistaController.js'
 import { Role } from '../auth/roles.js'
 import { verificaTokenJWT } from '../auth/middlewares/authMiddlewares.js'
+import { somenteDono } from '../auth/middlewares/propriedadeMiddleware.js'
+import { validaCorpo } from '../middlewares/validacaoMiddleware.js'
+import { contratoAtualizarContato } from './especialistaContratos.js'
 
 export const especialistaRouter = Router()
 
@@ -27,7 +30,13 @@ especialistaRouter.delete(
   verificaTokenJWT(Role.clinica, Role.especialista),
   apagarEspecialista
 )
-especialistaRouter.patch('/:id', atualizaContato)
+especialistaRouter.patch(
+  '/:id',
+  verificaTokenJWT(Role.especialista),
+  somenteDono(),
+  validaCorpo(contratoAtualizarContato),
+  atualizaContato
+)
 
 export default (app) => {
   app.use('/especialista', especialistaRouter)

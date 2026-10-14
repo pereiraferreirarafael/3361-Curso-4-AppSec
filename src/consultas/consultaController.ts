@@ -1,6 +1,8 @@
 import { type Request, type Response } from 'express'
 import { AppDataSource } from '../data-source.js'
 import { Consulta } from './consultaEntity.js'
+import { type Especialista } from '../especialistas/EspecialistaEntity.js'
+import { type Paciente } from '../pacientes/pacienteEntity.js'
 import {
   estaAtivoEspecialista,
   estaAtivoPaciente,
@@ -11,13 +13,17 @@ import {
 } from './consultaValidacoes.js'
 import { mapeiaLembretes } from '../utils/consultaUtils.js'
 import { AppError, Status } from '../error/ErrorHandler.js'
-import { paraConsultaResposta } from './consultaDto.js'
+import { type CriarConsultaDTO, paraConsultaResposta } from './consultaDto.js'
+import { filtroDeListagem, podeAcessarConsulta } from './consultaAcesso.js'
 
 export const criaConsulta = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const { especialista, paciente, data, desejaLembrete, lembretes } = req.body
+  // req.body já passou por validaCorpo(contratoCriarConsulta)
+  const { especialista, data, desejaLembrete, lembretes } = req.body as CriarConsultaDTO
+  // O paciente é sempre quem está logado: ninguém agenda em nome de outro
+  const paciente = req.userId as string
 
   if (!validaClinicaEstaAberta(data)) {
     throw new AppError('A clinica não está aberta nesse horário')
@@ -49,10 +55,10 @@ export const criaConsulta = async (
 
   const consulta = new Consulta()
 
-  consulta.especialista = especialista
-  consulta.paciente = paciente
+  consulta.especialista = { id: especialista } as Especialista
+  consulta.paciente = { id: paciente } as Paciente
   consulta.data = data
-  consulta.desejaLembrete = desejaLembrete
+  consulta.desejaLembrete = desejaLembrete ?? false
 
   if (desejaLembrete === true && lembretes !== undefined) {
     consulta.lembretes = mapeiaLembretes(lembretes)
@@ -65,7 +71,11 @@ export const listaConsultas = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const consultas = await AppDataSource.manager.find(Consulta)
+  const where = filtroDeListagem(req.userId, req.userRole)
+  if (where === null) {
+    throw new AppError('Não autorizado', Status.FORBIDDEN)
+  }
+  const consultas = await AppDataSource.manager.find(Consulta, { where })
 
   return res.json(consultas.map(paraConsultaResposta))
 }
@@ -76,7 +86,8 @@ export const buscaConsultaPorId = async (req: Request, res: Response
   const { id } = req.params
   const consulta = await AppDataSource.manager.findOne(Consulta, { where: { id }, relations: ['paciente', 'especialista'] })
 
-  if (consulta !== null) {
+  // Quem não participa da consulta recebe a mesma resposta de "não existe"
+  if (consulta !== null && podeAcessarConsulta(consulta, req.userId, req.userRole)) {
     res.json(paraConsultaResposta(consulta))
   } else {
     throw new AppError('Consulta não encontrada', Status.BAD_REQUEST)
@@ -93,7 +104,7 @@ export const deletaConsulta = async (
     where: { id }
   })
 
-  if (consulta == null) {
+  if (consulta == null || !podeAcessarConsulta(consulta, req.userId, req.userRole)) {
     throw new AppError('Consulta não encontrada')
   }
 

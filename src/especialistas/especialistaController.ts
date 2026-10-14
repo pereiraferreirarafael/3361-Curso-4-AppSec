@@ -3,7 +3,8 @@ import { AppDataSource } from '../data-source.js'
 import { Especialista } from './EspecialistaEntity.js'
 import { mapeiaPlano } from '../utils/planoSaudeUtils.js'
 import { Endereco } from '../enderecos/enderecoEntity.js'
-import { AppError } from '../error/ErrorHandler.js'
+import { AppError, Status } from '../error/ErrorHandler.js'
+import { type AtualizarContatoDTO } from './especialistaContratos.js'
 import { encryptPassword } from '../utils/senhaUtils.js'
 
 // Get All
@@ -135,23 +136,21 @@ export const atualizaContato = async (
   res: Response
 ): Promise<void> => {
   const { id } = req.params
-  const buscaEspecialista = await AppDataSource.manager.findOneBy(
-    Especialista,
-    { id }
-  )
-  const telefone = req.body.telefone
+  // req.body já passou por validaCorpo(contratoAtualizarContato): só `telefone`, validado
+  const { telefone } = req.body as AtualizarContatoDTO
 
-  if (buscaEspecialista !== null) {
-    buscaEspecialista.telefone = telefone
-    await AppDataSource.createQueryBuilder()
-      .update(Especialista, buscaEspecialista)
-      .where(buscaEspecialista.telefone)
-      .set({ telefone })
-      .execute()
-    res.status(200).json(buscaEspecialista)
-  } else {
-    throw new AppError('Telefone não atualizado')
+  const especialista = await AppDataSource.manager.findOneBy(Especialista, { id })
+
+  if (especialista === null) {
+    throw new AppError('Especialista não encontrado', Status.NOT_FOUND)
   }
+
+  // save() usa parâmetros do driver. O código anterior montava o WHERE com o
+  // próprio telefone enviado pelo cliente (`.where(telefone)`), o que era SQL injection.
+  especialista.telefone = telefone
+  await AppDataSource.manager.save(Especialista, especialista)
+
+  res.status(200).json({ id: especialista.id, nome: especialista.nome, telefone: especialista.telefone })
 }
 
 export const buscarEspecialistas = async (req: Request, res: Response): Promise<Response> => {
